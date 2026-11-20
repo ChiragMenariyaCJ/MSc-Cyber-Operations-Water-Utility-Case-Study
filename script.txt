@@ -1,0 +1,87 @@
+#!/usr/bin/bash
+
+# Thames Water - Immediate Mitigation Script
+#
+# This script is designed as an emergency response to block malicious IPs and
+# sinkhole a malicious DNS domain used for Command-and-Control (C2).
+#
+# REFERENCES:
+# 1. Shell script to ban an IP - Ask Ubuntu (no date).
+#    Available at: https://askubuntu.com/questions/683617/shell-script-to-ban-an-ip
+#
+# 2. How to restrict access to certain domains using iptables - Ask Ubuntu (no date).
+#    Available at: https://askubuntu.com/questions/412039/how-to-restrict-the-access-to-the-certain-domains-during-work-hours-automaticall
+#
+# 3. Monitor /etc/hosts blacklist domain access - Stack Overflow (no date).
+#    Available at: https://stackoverflow.com/questions/68639379/bash-script-or-existing-program-to-monitor-etc-hosts-file-domain-blacklist-acc
+#
+# These sources provided guidance for safe use of iptables and hosts-file modifications
+# in Linux-based mitigation scripts relevant to this attack response.
+
+# ---------------------------- VARIABLES ----------------------------------- #
+
+# Variables
+MALICIOUS_IPS=(
+  "198.51.100.12"   # Attacker C2 server
+  "103.20.10.1"     # UDP flood source
+)
+
+MALICIOUS_DOMAIN="syslog-host.cn"
+HOSTS_FILE="/etc/hosts"
+LOG_FILE="/thames_immediate_mitigation.log"
+
+# Simple logger
+log() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') [mitigation] $1" | tee -a "$LOG_FILE"
+}
+
+
+# -------- Function 1: Block Malicious IP Addresses -------- #
+
+block_malicious_ips() {
+  log "Blocking malicious IP addresses..."
+
+  for ip in "${MALICIOUS_IPS[@]}"; do
+
+    # Block inbound traffic FROM attacker
+    if ! iptables -C INPUT -s "$ip" -j DROP &>/dev/null; then
+      iptables -A INPUT -s "$ip" -j DROP
+      log "  - Inbound traffic blocked from $ip"
+    fi
+
+    # Block outbound traffic TO attacker
+    if ! iptables -C OUTPUT -d "$ip" -j DROP &>/dev/null; then
+      iptables -A OUTPUT -d "$ip" -j DROP
+      log "  - Outbound traffic blocked to $ip"
+    fi
+
+  done
+}
+
+
+# -------- Function 2: Block Malicious Domain -------- #
+
+block_malicious_domain() {
+  log "Blocking malicious DNS domain: $MALICIOUS_DOMAIN"
+
+  if ! grep -q "$MALICIOUS_DOMAIN" "$HOSTS_FILE"; then
+    echo "0.0.0.0 $MALICIOUS_DOMAIN" >> "$HOSTS_FILE"
+    log "  - Domain $MALICIOUS_DOMAIN sinkholed successfully"
+  else
+    log "  - Domain $MALICIOUS_DOMAIN is already blocked"
+  fi
+}
+
+
+# -------- Main Function -------- #
+
+main() {
+  log "===== Starting Immediate Mitigation Actions ====="
+
+  block_malicious_ips
+  block_malicious_domain
+
+  log "===== Mitigation Complete ====="
+}
+
+main
